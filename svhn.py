@@ -98,5 +98,3 @@ def traintest():
     print("F1 score for digit 4:", f1_scores[3])
     print("F1 score for digit 5:", f1_scores[4])
     return final_f1_score
-
-test('1.png')

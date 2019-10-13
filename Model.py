@@ -22,9 +22,13 @@ def load_data(dataset='cropped', normalised=True, grey=False):
         directory = 'grey'
 
     image_processor = ImageProcessor(data_dir)
-    train_data, train_labels = image_processor.load_data('otrain', dataset)
+    train_data, train_labels = image_processor.load_data('train', dataset)
     test_data, test_labels = image_processor.load_data('test', dataset)
-
+    """
+    extra_data, extra_labels = image_processor.load_data('extra', dataset)
+    train_data = train_data + extra_data
+    train_labels = train_labels + extra_labels
+    """
     return train_data, train_labels, test_data, test_labels
 
 

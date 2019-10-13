@@ -2,8 +2,12 @@
 import h5py
 import os
 import numpy as np
+import pandas as pd
 import PIL.Image as Image
-import feather
+import joblib
+import random
+import tensorflow as tf
+tf.enable_eager_execution()
 
 
 class ImageProcessor:
@@ -89,7 +93,8 @@ class ImageProcessor:
         return structures
 
     def save_data(self, original, cropped, labels, name):
-        """Saves image data and labels in hdf5 format
+        """
+        Saves image data and labels in hdf5 format
         """
         # only create files if not created already
         if not os.path.isfile(name+"_original.h5"):
@@ -103,6 +108,27 @@ class ImageProcessor:
                 self.output_dir, name + "_cropped.h5"), 'w')
             cropped_output_file.create_dataset(name + "_dataset", data=cropped)
             cropped_output_file.create_dataset(name+"_labels", data=labels)
+
+    def save_image(self, data_dir, original_image, cropped_image, rand_crop, label, name, original=False):
+        """
+        Saves image in hdf5 format in a folder for each label
+        """
+        if original == True:
+            if not os.path.exists(data_dir+"/original/"+label):
+                os.makedirs(data_dir+"/original/"+label)
+            if os.path.exists(data_dir+"/original/"+label):
+                im = Image.fromarray(original_image)
+                im.save(data_dir +
+                        '/original/'+'/'+name)
+        elif original == False:
+            if not os.path.exists(data_dir+"/cropped/"):
+                os.makedirs(data_dir+'/cropped/')
+            if os.path.exists(data_dir+'/cropped/'):
+                im = Image.fromarray(cropped_image)
+                im.save(data_dir +
+                        '/cropped/'+name)
+                im_rand = Image.fromarray(rand_crop)
+                im_rand.save(data_dir+'/cropped/'+'rand_crop_'+name)
 
     def load_data(self, name, dataset):
         """Loads an hdf5 file that contains the image data and labels
@@ -120,7 +146,7 @@ class ImageProcessor:
         return data, labels
 
     def read_digit_struct(self, data_dir):
-        """Reads the digitStruct file and returns the name of 
+        """Reads the digitStruct file and returns the name of
         the image along with its corresponding bounding box
         """
         struct_file = data_dir + '/digitStruct.mat'
@@ -130,7 +156,7 @@ class ImageProcessor:
         structs = self.get_all_images_and_digit_structure()
         return structs
 
-    def process_file(self, data_dir):
+    def process_file(self, data_dir, save_data_dir, dataset='train'):
         """Process all images one by one and return them, together with their labels
 
         Args:
@@ -142,13 +168,11 @@ class ImageProcessor:
         structs = self.read_digit_struct(data_dir)
         data_count = len(structs)
 
-        image_data = np.zeros((data_count, self.OUT_HEIGHT,
+        image_data = np.zeros((1, self.OUT_HEIGHT,
                                self.OUT_WIDTH, self.OUT_CHANNELS), dtype=np.float32)
-        cropped_data = np.zeros((data_count, self.OUT_HEIGHT,
+        cropped_data = np.zeros((1, self.OUT_HEIGHT,
                                  self.OUT_WIDTH, self.OUT_CHANNELS), dtype=np.float32)
-        labels = np.zeros((data_count, self.max_labels,
-                           self.NUM_LABELS), dtype=np.int32)
-
+        df = pd.DataFrame(columns=['filename', 'label'])
         for i in range(data_count):
             label = structs[i]['label']
             file_name = os.path.join(data_dir, structs[i]['name'])
@@ -156,11 +180,15 @@ class ImageProcessor:
             left = structs[i]['left']
             height = structs[i]['height']
             width = structs[i]['width']
-
-            labels[i] = self.create_label_array(label)
-            image_data[i], cropped_data[i] = self.create_image_array(
+            image_data, cropped_data, random_crop = self.create_image_array(
                 file_name, top, left, height, width)
-        return image_data, cropped_data, labels
+            df = df.append(
+                {'filename': save_data_dir+"/cropped/"+structs[i]["name"], 'label': label}, ignore_index=True)
+            df = df.append({"filename": save_data_dir+"/cropped/" + "rand_crop_" +
+                            structs[i]['name'], "label": label}, ignore_index=True)
+            self.save_image(save_data_dir, image_data,
+                            cropped_data, random_crop, label, structs[i]['name'])
+        joblib.dump(df, './Data/processed/'+dataset+'/metadata_df.h5')
 
     def create_label_array(self, labels):
         """Creates the label array
@@ -218,48 +246,47 @@ class ImageProcessor:
         image_array = np.array(image)
         cropped_array = np.array(cropped_image)
 
-        return image_array, cropped_array
+        # Randomly crop cropped image
+        rand_crop = tf.image.random_crop(cropped_array, size=(54, 54, 3))
+        # Resize cropped
+        cropped_image = cropped_image.resize((54, 54))
+        cropped_array = np.array(cropped_image)
+        return image_array, cropped_array, rand_crop.numpy()
 
 
 def main():
     image_processor = ImageProcessor(
         "./Data/processed", max_labels=5, normalise=True, grey=False)
-
+    if os.path.exists('./Data/processed/Done'):
+        return
     # Training set
-    if not os.path.isfile("./Data/processed/train_cropped.h5"):
+
+    if not os.path.isdir("./Data/processed"):
         print("Making directory: ./Data/processed")
-        if not os.path.isdir("./Data/processed"):
-            os.mkdir("./Data/processed")
-        print("Making directory ./Data/Images/train")
-        if not os.path.isdir("./Data/Images"):
-            os.mkdir("./Data/Images")
-        if not os.path.isdir("./Data/Images/train"):
-            os.mkdir('./Data/Images/train')
-        train_original, train_cropped, train_labels = image_processor.process_file(
-            './Data/train')
-        image_processor.save_data(
-            train_original, train_cropped, train_labels, 'train')
+        os.makedirs("./Data/processed")
+
+    if not os.path.isdir("./Data/processed/train"):
+        os.mkdir('./Data/processed/train')
+        print('Making directory ./Data/processed/train')
+        image_processor.process_file(
+            './Data/train', './Data/processed/train', dataset='train')
 
     # Test set
-    if not os.path.isfile("./Data/processed/test_cropped.h5"):
-        if not os.path.isdir('./Data/Images/test'):
-            print("Making directory ./Data/Images/test")
-            os.mkdir('./Data/Images/test')
-        test_original, test_cropped, test_labels = image_processor.process_file(
-            './Data/test')
-        image_processor.save_data(
-            test_original, test_cropped, test_labels, 'test')
-    """
+
+    if not os.path.isdir('./Data/processed/test'):
+        print("Making directory ./Data/processed/test")
+        os.mkdir('./Data/processed/test')
+        image_processor.process_file(
+            './Data/test', './Data/processed/test', dataset='test')
+
     # Extra Set
-    if not os.path.isdir('./Data/processed/extra_cropped.h5'):
-        if not os.path.isdir('./Data/Images/extra'):
-            print("Making directory ./Data/Images/extra")
-            os.mkdir('./Data/Images/extra')
-        extra_original, extra_cropped, extra_labels = image_processor.process_file(
-            './Data/extra')
-        image_processor.save_data(
-            extra_original, extra_cropped, extra_labels, 'extra')
-    """
+    if not os.path.isdir('./Data/processed/extra'):
+        print("Making directory ./Data/processed/extra")
+        os.mkdir('./Data/processed/extra')
+        image_processor.process_file(
+            './Data/extra', './Data/processed/extra', dataset='extra')
+
+    os.makedirs('./Data/processed/Done')
 
 
 if __name__ == "__main__":

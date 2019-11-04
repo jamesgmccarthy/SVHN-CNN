@@ -48,7 +48,7 @@ def convert_image(image, normalise=False):
     image = cv2.imread(image)
     image = cv2.resize(image, dsize=(64, 64))
     image = np.expand_dims(image, 0)
-    image = image/255.0
+    image = image / 255.0
     return image
 
 
@@ -70,14 +70,14 @@ def score_model(scores, y_test, num_samples):
     labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     predicted_digits = np.zeros((num_samples, 5))
     true_digits = np.zeros((num_samples, 5))
-    f1_scores = [None]*5
-    accuracy_scores = [None]*5
+    f1_scores = [None] * 5
+    accuracy_scores = [None] * 5
     full_f1_score = 0
     print(len(y_test))
     for x in range(len(y_test)):
         for y in range(5):
             for batch in range(len(y_test[x][0])):
-                true_digits[batch + (len(y_test)*x)
+                true_digits[batch + (len(y_test) * x)
                             ][y] = labels[np.argmax(y_test[x][y][batch])]
             predicted_digits[x][y] = labels[np.argmax(scores[y][x])]
     for i in range(5):
@@ -94,7 +94,7 @@ def score_model(scores, y_test, num_samples):
             count += 1
 
     print("of", total, "numbers,", count, " were correct")
-    print(count*100/total, "\%")
+    print(count * 100 / total, "\%")
     return f1_scores, full_f1_score, accuracy_scores, full_acc_score
 
 
